@@ -59,11 +59,42 @@ class Lens:
         self.par(s, 2, order)              # Par2 = Diffraction Order
         return s
 
+    def model_material(self, surf, nd, vd):
+        """モデルガラス（nd, vd）。カタログに無い材料（組織・樹脂）に使う"""
+        solve = surf.MaterialCell.CreateSolveType(self.ZOSAPI.Editors.SolveType.MaterialModel)
+        solve._S_MaterialModel.IndexNd = float(nd)
+        solve._S_MaterialModel.AbbeVd = float(vd)
+        surf.MaterialCell.SetSolveData(solve)
+
+    def circular_aperture(self, surf, radius):
+        """円形の開口（これより外の光線を止める）"""
+        ad = surf.ApertureData
+        st = ad.CreateApertureTypeSettings(self.ZOSAPI.Editors.LDE.SurfaceApertureTypes.CircularAperture)
+        st._S_CircularAperture.MaximumRadius = float(radius)
+        ad.ChangeApertureTypeSettings(st)
+
     # ---- オペランド ----
     def val(self, op_name, *params):
         op = getattr(self.ZOSAPI.Editors.MFE.MeritOperandType, op_name)
         p = list(params) + [0] * (8 - len(params))
         return self.system.MFE.GetOperandValue(op, *p)
+
+
+def scan_min(set_value, metric, values):
+    """values を順に設定して metric が最小になる値を返す（3 点の放物線で補間）。最後に最小値を設定する"""
+    ys = []
+    for v in values:
+        set_value(v)
+        ys.append(metric())
+    k = min(range(len(values)), key=lambda i: ys[i])
+    best = values[k]
+    if 0 < k < len(values) - 1:
+        y0, y1, y2 = ys[k - 1], ys[k], ys[k + 1]
+        den = y0 - 2 * y1 + y2
+        if den > 0:
+            best = values[k] + 0.5 * (values[k + 1] - values[k]) * (y0 - y2) / den
+    set_value(best)
+    return best, ys[k]
 
 
 def vendor_path(name):
